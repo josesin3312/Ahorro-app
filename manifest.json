@@ -1,0 +1,16 @@
+{
+  "name": "Programa Mensual de Ahorro",
+  "short_name": "Ahorro Mensual",
+  "description": "Controla tus ahorros mes a mes con gráfica de progreso",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#F3F4F6",
+  "theme_color": "#4F46E5",
+  "icons": [
+    {
+      "src": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTkyIiBoZWlnaHQ9IjE5MiIgdmlld0JveD0iMCAwIDE5MiAxOTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxwYXRoIGQ9Ik0xMjEuMDMgMzUuMDM0QzEyMS4wMyAyNS40MDcgMTEyLjI5IDE2LjY2NyAxMDIuNjYgMTYuNjY3SDY3LjM0QzU3LjcxIDE2LjY2NyA0OC45OTcgMjUuNDA3IDQ4Ljk5NyAzNS4wMzRWMTE3LjFoLTUuNDlDMzguNzM3IDExNy4xIDM0LjUgMTIxLjMzNCAzNC41IDEyNS45OThWMzQ0YzAgMTYuNDAzIDEzLjU5NyAzMCAzMCAzMFgxNjJDMTc4LjQwMyAzNzQgMTkyIDM1OS40MDMgMTkyIDM0M1YxMjUuOTk4QzE5MiAxMjEuMzM0IDE4Ny4yNjMgMTE3LjEgMTgyLjQ5NyAxMTcuMUgxMjEuMDNDMTIxLjAzIDExNy4xIDEyMS4wMyAxMTcuMSAxMjEuMDMgMTE3LjFWMzUuMDM0Wk0xNTEuMDIzIDM0LjAzNFYxMTYuOTk4SDE1NS41MDNDMTYwLjI2NyAxMTYuOTk4IDE2NCAxMjEuMzM0IDE2NCAxMjUuOTk4VjM0NGMxNi40MDMgMCAzMCAtMTMuNTk3IDMwIC0zMFYxMjUuOTk4QzE5NCAxMjEuMzM0IDE4OS4yNjMgMTE3LjEgMTg0LjUwMyAxMTYuOTk4SDE1MS4wMjNaIiBmaWxsPSIjNEY0NkU1Ii8+Cjwvc3ZnPgo=",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    }
+  ]
+}
