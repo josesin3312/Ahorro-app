@@ -23,12 +23,26 @@
     box-sizing: border-box;
 }
 
+html {
+    scroll-behavior: smooth;
+    height: 100%;
+}
+
 body {
     font-family: 'Poppins', sans-serif;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     min-height: 100vh;
+    height: 100vh;
+    margin: 0;
     padding: 20px;
     color: var(--dark-color);
+    overflow: auto;
+}
+
+@media (display-mode: standalone) {
+    body {
+        padding-top: env(safe-area-inset-top);
+    }
 }
 
 .container {
