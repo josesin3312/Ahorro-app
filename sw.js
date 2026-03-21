@@ -1,5 +1,5 @@
 // Service Worker para PWA - Ahorro Mensual (Offline + Cache)
-const CACHE_NAME = 'ahorro-mensual-v1.1';
+const CACHE_NAME = 'ahorro-mensual-v1.2';
 const urlsToCache = [
   './',
   './index.html',
@@ -7,6 +7,7 @@ const urlsToCache = [
   './js/app.js',
   './js/export.js',
   './manifest.json',
+  './icono app.jpeg',
   'https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap',
   'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
   'https://cdn.jsdelivr.net/npm/chart.js'
@@ -49,6 +50,7 @@ self.addEventListener('fetch', event => {
         if (event.request.destination === 'script' || 
             event.request.destination === 'style' || 
             event.request.destination === 'document' ||
+            event.request.destination === 'image' ||
             event.request.destination === 'font') {
           const responseClone = response.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(event.request, responseClone));
@@ -81,5 +83,5 @@ function createOfflineFallback() {
   });
 }
 
-console.log('SW registrado: Ahorro Mensual PWA v1.1');
+console.log('SW registrado: Ahorro Mensual PWA v1.2 - Icono App agregado');
 
