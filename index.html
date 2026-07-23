@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0c0f17">
+  <title>Control de Ahorro Mensual</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="styles.css">
+  <!-- Chart.js para visualizaciones -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+  <!-- HEADER / ENCABEZADO -->
+  <header class="app-header">
+    <div class="header-content">
+      <div class="brand">
+        <span class="logo-icon">💰</span>
+        <div>
+          <h1>Control de Ahorro Mensual</h1>
+          <p class="subtitle">Gestión Financiera Personal</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="btnExportCSV" class="btn btn-secondary">📊 Exportar CSV</button>
+        <button id="btnExportJSON" class="btn btn-secondary">💾 Respaldar (.json)</button>
+        <button id="btnImportJSON" class="btn btn-secondary">📂 Cargar Copia</button>
+        <input type="file" id="fileImportJSON" accept=".json" style="display: none;">
+      </div>
+    </div>
+  </header>
+
+  <!-- CONTENEDOR PRINCIPAL -->
+  <main class="main-layout">
+
+    <!-- RESUMEN / TARJETAS KPI -->
+    <section class="kpi-grid">
+      <div class="kpi-card highlight">
+        <div class="kpi-header">
+          <span class="kpi-icon">💰</span>
+          <span class="kpi-label">TOTAL AHORRADO ACTUALMENTE</span>
+        </div>
+        <div class="kpi-value" id="txtTotalAhorrado">Q0.00</div>
+        <div class="kpi-subtext" id="txtTransaccionesCount">0 movimientos registrados</div>
+      </div>
+
+      <div class="kpi-card success">
+        <div class="kpi-header">
+          <span class="kpi-icon">📈</span>
+          <span class="kpi-label">TOTAL DEPOSITADO</span>
+        </div>
+        <div class="kpi-value" id="txtTotalDepositado">Q0.00</div>
+      </div>
+
+      <div class="kpi-card danger">
+        <div class="kpi-header">
+          <span class="kpi-icon">📉</span>
+          <span class="kpi-label">TOTAL RETIRADO</span>
+        </div>
+        <div class="kpi-value" id="txtTotalRetirado">Q0.00</div>
+      </div>
+
+      <div class="kpi-card info">
+        <div class="kpi-header">
+          <span class="kpi-icon">🎯</span>
+          <span class="kpi-label">META DE AHORRO</span>
+          <button id="btnDefinirMeta" class="btn-text">✏️ Definir Meta</button>
+        </div>
+        <div class="kpi-value" id="txtMetaMonto">Q0.00</div>
+        <div class="progress-bar-container">
+          <div class="progress-bar" id="barMetaProgress" style="width: 0%;"></div>
+        </div>
+        <div class="kpi-subtext" id="txtMetaPercent">0% alcanzado de la meta</div>
+      </div>
+    </section>
+
+    <!-- FORMULARIO & GRÁFICA -->
+    <section class="content-grid">
+      <!-- FORMULARIO DE REGISTRO -->
+      <div class="panel">
+        <h2 class="panel-title">+ Nueva Transacción</h2>
+        <form id="formTransaccion" class="form-layout">
+          <div class="form-group">
+            <label for="cboTipo">Tipo de Movimiento</label>
+            <select id="cboTipo" class="form-input" required>
+              <option value="deposito">🟢 Depósito / Ahorro (+)</option>
+              <option value="retiro">🔴 Retiro (-)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="txtMonto">Monto (Q)</label>
+            <input type="number" id="txtMonto" class="form-input" placeholder="0.00" step="0.01" min="0.01" required>
+          </div>
+
+          <div class="form-group">
+            <label for="txtFecha">Fecha</label>
+            <input type="date" id="txtFecha" class="form-input" required>
+          </div>
+
+          <div class="form-group">
+            <label for="txtConcepto">Concepto / Nota (Opcional)</label>
+            <input type="text" id="txtConcepto" class="form-input" placeholder="Ej. Ahorro quincenal, Emergencia...">
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-block">Guardar Registro</button>
+        </form>
+      </div>
+
+      <!-- PANEL DE GRÁFICO -->
+      <div class="panel">
+        <h2 class="panel-title">📈 Evolución de Ahorros</h2>
+        <div class="chart-container">
+          <canvas id="chartAhorros"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- HISTORIAL DE TRANSACCIONES -->
+    <section class="panel full-width">
+      <div class="panel-header-flex">
+        <h2 class="panel-title">📋 Historial de Transacciones</h2>
+        <div class="filter-group">
+          <input type="text" id="txtBuscar" class="form-input search-input" placeholder="🔍 Buscar por concepto...">
+        </div>
+      </div>
+      <div class="table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Tipo</th>
+              <th>Concepto</th>
+              <th class="text-right">Monto</th>
+              <th class="text-center">Acción</th>
+            </tr>
+          </thead>
+          <tbody id="tblHistorial">
+            <!-- Cargado dinámicamente -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="app.js"></script>
+  <script>
+    // Registro del Service Worker para PWA
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then(reg => console.log('SW registrado con éxito:', reg.scope))
+          .catch(err => console.error('Error al registrar SW:', err));
+      });
+    }
+  </script>
+</body>
+</html>
