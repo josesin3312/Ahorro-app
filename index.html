@@ -9,6 +9,8 @@
   <link rel="stylesheet" href="styles.css">
   <!-- Chart.js para visualizaciones -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Librería de Autenticación de Google Identity Services -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 
@@ -23,6 +25,10 @@
         </div>
       </div>
       <div class="header-actions">
+        <!-- BOTONES DE GOOGLE DRIVE Y RESPALDOS -->
+        <button class="btn btn-secondary" style="background-color: #0d2b1d; border-color: #00e676; color: #00e676;" onclick="forzarSincronizacionDrive()">☁️ Sincronizar Drive</button>
+        <span id="syncStatus" style="font-size: 0.75rem; color: #00e676; align-self: center; margin-left: 5px;"></span>
+        
         <button id="btnExportCSV" class="btn btn-secondary">📊 Exportar CSV</button>
         <button id="btnExportJSON" class="btn btn-secondary">💾 Respaldar (.json)</button>
         <button id="btnImportJSON" class="btn btn-secondary">📂 Cargar Copia</button>
@@ -80,7 +86,9 @@
       <!-- FORMULARIO DE REGISTRO -->
       <div class="panel">
         <h2 class="panel-title">+ Nueva Transacción</h2>
-        <form id="formTransaccion" class="form-layout">
+        <form id="formTransaccion" class="form-layout" onsubmit="guardarTransaccion(event)">
+          <input type="hidden" id="idTransaccionEditando" value="">
+          
           <div class="form-group">
             <label for="cboTipo">Tipo de Movimiento</label>
             <select id="cboTipo" class="form-input" required>
@@ -104,7 +112,7 @@
             <input type="text" id="txtConcepto" class="form-input" placeholder="Ej. Ahorro quincenal, Emergencia...">
           </div>
 
-          <button type="submit" class="btn btn-primary btn-block">Guardar Registro</button>
+          <button type="submit" id="btnSubmitForm" class="btn btn-primary btn-block">Guardar Registro</button>
         </form>
       </div>
 
@@ -122,7 +130,7 @@
       <div class="panel-header-flex">
         <h2 class="panel-title">📋 Historial de Transacciones</h2>
         <div class="filter-group">
-          <input type="text" id="txtBuscar" class="form-input search-input" placeholder="🔍 Buscar por concepto...">
+          <input type="text" id="txtBuscar" class="form-input search-input" placeholder="🔍 Buscar por concepto..." oninput="renderizarHistorial()">
         </div>
       </div>
       <div class="table-wrapper">
@@ -144,24 +152,366 @@
     </section>
   </main>
 
-  <!-- Integración de Supabase -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- SCRIPT INTEGRADO DE INDEXEDDB + GOOGLE DRIVE -->
   <script>
-    const SUPABASE_URL = 'https://bdhdycwrazvribxmlylm.supabase.co';
-    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJkaGR5Y3dyYXp2cmlieG1seWxtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ5MDQyNzksImV4cCI6MjEwMDQ4MDI3OX0.oAFUARH1d_LOMMXMxVic5a0TluyUQ1zVDY3nPuBRoXs';
-    const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-  </script>
+    let transacciones = [];
+    let metaAhorro = 0;
+    let db = null;
+    let chartInstance = null;
 
-  <script src="app.js"></script>
-  <script>
-    // Registro del Service Worker para PWA
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js')
-          .then(reg => console.log('SW registrado con éxito:', reg.scope))
-          .catch(err => console.error('Error al registrar SW:', err));
+    // Google Drive Sync Config
+    let tokenClient;
+    let accessToken = null;
+    let pendingDriveAction = null;
+    const MASTER_FILE_NAME = "Ahorros_Master_Sync.json";
+
+    window.onload = function() {
+      document.getElementById('txtFecha').valueAsDate = new Date();
+
+      if (typeof google !== 'undefined') {
+        tokenClient = google.accounts.oauth2.initTokenClient({
+          client_id: '1035816011271-3gijujefm59vph6039flrl2k6c76seam.apps.googleusercontent.com',
+          scope: 'https://www.googleapis.com/auth/drive.file',
+          callback: (response) => {
+            if (response.error !== undefined) {
+              console.error(response);
+              return;
+            }
+            accessToken = response.access_token;
+            if (pendingDriveAction === 'sync') {
+              sincronizacionCompletaDrive();
+            } else if (pendingDriveAction === 'upload') {
+              ejecutarSubidaSilenciosa();
+            }
+          },
+        });
+      }
+    };
+
+    // --- INDEXEDDB SETUP ---
+    const requestDB = indexedDB.open("AhorrosDB", 1);
+
+    requestDB.onupgradeneeded = function(e) {
+      db = e.target.result;
+      if (!db.objectStoreNames.contains("transacciones")) {
+        db.createObjectStore("transacciones", { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains("config")) {
+        db.createObjectStore("config", { keyPath: "key" });
+      }
+    };
+
+    requestDB.onsuccess = function(e) {
+      db = e.target.result;
+      cargarDatosLocales(() => {
+        intentarAutoSincronizacionAlAbrir();
+      });
+    };
+
+    requestDB.onerror = function(e) {
+      console.error("Error al abrir IndexedDB de Ahorros", e);
+    };
+
+    function cargarDatosLocales(callback) {
+      if (!db) return;
+      const tx = db.transaction(["transacciones", "config"], "readonly");
+      
+      const storeTx = tx.objectStore("transacciones").getAll();
+      storeTx.onsuccess = function() {
+        transacciones = storeTx.result || [];
+      };
+
+      const configTx = tx.objectStore("config").get("meta");
+      configTx.onsuccess = function() {
+        if (configTx.result) {
+          metaAhorro = configTx.result.valor || 0;
+        }
+        actualizarTodo();
+        if (callback) callback();
+      };
+    }
+
+    // --- OPERACIONES DE DATOS ---
+    function guardarTransaccion(e) {
+      e.preventDefault();
+      const tipo = document.getElementById('cboTipo').value;
+      const monto = parseFloat(document.getElementById('txtMonto').value) || 0;
+      const fecha = document.getElementById('txtFecha').value;
+      const concepto = document.getElementById('txtConcepto').value || (tipo === 'deposito' ? 'Depósito' : 'Retiro');
+
+      const nuevaTx = {
+        id: Date.now(),
+        tipo,
+        monto,
+        fecha,
+        concepto
+      };
+
+      const tx = db.transaction("transacciones", "readwrite");
+      tx.objectStore("transacciones").put(nuevaTx);
+      
+      tx.oncomplete = function() {
+        transacciones.unshift(nuevaTx);
+        document.getElementById('formTransaccion').reset();
+        document.getElementById('txtFecha').valueAsDate = new Date();
+        actualizarTodo();
+        dispararSubidaAutomatica();
+      };
+    }
+
+    function eliminarTransaccion(id) {
+      if (confirm("¿Deseas eliminar esta transacción?")) {
+        const idNum = Number(id);
+        const tx = db.transaction("transacciones", "readwrite");
+        tx.objectStore("transacciones").delete(idNum);
+
+        tx.oncomplete = function() {
+          transacciones = transacciones.filter(t => t.id !== idNum);
+          actualizarTodo();
+          dispararSubidaAutomatica();
+        };
+      }
+    }
+
+    // Definir Meta
+    document.getElementById('btnDefinirMeta').addEventListener('click', () => {
+      const nuevaMeta = prompt("Ingresa tu meta de ahorro total (Q):", metaAhorro);
+      if (nuevaMeta !== null) {
+        metaAhorro = parseFloat(nuevaMeta) || 0;
+        const tx = db.transaction("config", "readwrite");
+        tx.objectStore("config").put({ key: "meta", valor: metaAhorro });
+        tx.oncomplete = function() {
+          actualizarTodo();
+          dispararSubidaAutomatica();
+        };
+      }
+    });
+
+    // --- GOOGLE DRIVE AUTOMATIZACIÓN ---
+    function forzarSincronizacionDrive() {
+      document.getElementById('syncStatus').innerText = "⏳ Sincronizando...";
+      if (!accessToken) {
+        pendingDriveAction = 'sync';
+        tokenClient.requestAccessToken();
+      } else {
+        sincronizacionCompletaDrive();
+      }
+    }
+
+    async function sincronizacionCompletaDrive() {
+      try {
+        document.getElementById('syncStatus').innerText = "☁️ Buscando nube...";
+        const query = encodeURIComponent(`name = '${MASTER_FILE_NAME}' and trashed = false`);
+        const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}`, {
+          headers: new Headers({ 'Authorization': 'Bearer ' + accessToken })
+        });
+        const data = await res.json();
+
+        if (data.files && data.files.length > 0) {
+          const fileId = data.files[0].id;
+          const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+            headers: new Headers({ 'Authorization': 'Bearer ' + accessToken })
+          });
+          const cloudData = await fileRes.json();
+
+          const tx = db.transaction(["transacciones", "config"], "readwrite");
+          const storeTx = tx.objectStore("transacciones");
+          storeTx.clear();
+          (cloudData.transacciones || []).forEach(item => storeTx.put(item));
+
+          if (cloudData.meta) {
+            metaAhorro = cloudData.meta;
+            tx.objectStore("config").put({ key: "meta", valor: metaAhorro });
+          }
+
+          tx.oncomplete = function() {
+            cargarDatosLocales();
+            document.getElementById('syncStatus').innerText = "✓ Sincronizado";
+            setTimeout(() => { document.getElementById('syncStatus').innerText = ""; }, 4000);
+          };
+        } else {
+          await ejecutarSubidaSilenciosa();
+        }
+      } catch (err) {
+        console.error(err);
+        document.getElementById('syncStatus').innerText = "❌ Error sync";
+        accessToken = null;
+      }
+    }
+
+    function intentarAutoSincronizacionAlAbrir() {
+      if (typeof google !== 'undefined' && tokenClient) {
+        document.getElementById('syncStatus').innerText = "🔄 Conectando...";
+        pendingDriveAction = 'sync';
+        tokenClient.requestAccessToken({ prompt: '' });
+      }
+    }
+
+    function dispararSubidaAutomatica() {
+      document.getElementById('syncStatus').innerText = "☁️ Guardando...";
+      if (!accessToken) {
+        pendingDriveAction = 'upload';
+        tokenClient.requestAccessToken({ prompt: '' });
+      } else {
+        ejecutarSubidaSilenciosa();
+      }
+    }
+
+    async function ejecutarSubidaSilenciosa() {
+      try {
+        const query = encodeURIComponent(`name = '${MASTER_FILE_NAME}' and trashed = false`);
+        const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}`, {
+          headers: new Headers({ 'Authorization': 'Bearer ' + accessToken })
+        });
+        const data = await res.json();
+
+        const payload = {
+          meta: metaAhorro,
+          transacciones: transacciones
+        };
+        const fileContent = JSON.stringify(payload, null, 2);
+
+        if (data.files && data.files.length > 0) {
+          const fileId = data.files[0].id;
+          await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
+            method: 'PATCH',
+            headers: new Headers({ 
+              'Authorization': 'Bearer ' + accessToken,
+              'Content-Type': 'application/json'
+            }),
+            body: fileContent
+          });
+        } else {
+          const metadata = {
+            name: MASTER_FILE_NAME,
+            mimeType: 'application/json'
+          };
+          const form = new FormData();
+          form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+          form.append('file', new Blob([fileContent], { type: 'application/json' }));
+
+          await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+            method: 'POST',
+            headers: new Headers({ 'Authorization': 'Bearer ' + accessToken }),
+            body: form
+          });
+        }
+
+        document.getElementById('syncStatus').innerText = "✓ Sincronizado";
+        setTimeout(() => { document.getElementById('syncStatus').innerText = ""; }, 4000);
+      } catch (err) {
+        console.error(err);
+        document.getElementById('syncStatus').innerText = "❌ Error al subir";
+        accessToken = null;
+      }
+    }
+
+    // --- RENDERIZADO Y ESTADÍSTICAS ---
+    function actualizarTodo() {
+      let totalDepositado = 0;
+      let totalRetirado = 0;
+
+      transacciones.forEach(t => {
+        if (t.tipo === 'deposito') {
+          totalDepositado += Number(t.monto) || 0;
+        } else {
+          totalRetirado += Number(t.monto) || 0;
+        }
+      });
+
+      const totalAhorrado = totalDepositado - totalRetirado;
+
+      document.getElementById('txtTotalAhorrado').innerText = `Q${totalAhorrado.toFixed(2)}`;
+      document.getElementById('txtTotalDepositado').innerText = `Q${totalDepositado.toFixed(2)}`;
+      document.getElementById('txtTotalRetirado').innerText = `Q${totalRetirado.toFixed(2)}`;
+      document.getElementById('txtTransaccionesCount').innerText = `${transacciones.length} movimientos registrados`;
+      document.getElementById('txtMetaMonto').innerText = `Q${metaAhorro.toFixed(2)}`;
+
+      const porcentaje = metaAhorro > 0 ? Math.min((totalAhorrado / metaAhorro) * 100, 100) : 0;
+      document.getElementById('barMetaProgress').style.width = `${porcentaje}%`;
+      document.getElementById('txtMetaPercent').innerText = `${porcentaje.toFixed(1)}% alcanzado de la meta`;
+
+      renderizarHistorial();
+      renderizarGrafico();
+    }
+
+    function renderizarHistorial() {
+      const tbody = document.getElementById('tblHistorial');
+      const filtro = document.getElementById('txtBuscar').value.toLowerCase();
+      tbody.innerHTML = '';
+
+      const filtradas = transacciones.filter(t => t.concepto.toLowerCase().includes(filtro));
+
+      if (filtradas.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center" style="padding: 20px; color: #777;">No hay transacciones registradas.</td></tr>`;
+        return;
+      }
+
+      filtradas.forEach(t => {
+        const esDeposito = t.tipo === 'deposito';
+        const signo = esDeposito ? '+' : '-';
+        const colorClase = esDeposito ? 'color: #00e676;' : 'color: #ff5252;';
+        
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${t.fecha}</td>
+          <td><span style="padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; background: ${esDeposito ? '#0d2b1d' : '#3a1515'}; color: ${esDeposito ? '#00e676' : '#ff5252'};">${esDeposito ? 'Depósito' : 'Retiro'}</span></td>
+          <td>${t.concepto}</td>
+          <td class="text-right" style="font-weight: bold; ${colorClase}">${signo}Q${Number(t.monto).toFixed(2)}</td>
+          <td class="text-center"><button class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem;" onclick="eliminarTransaccion(${t.id})">🗑️</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function renderizarGrafico() {
+      const ctx = document.getElementById('chartAhorros').getContext('2d');
+      // Ordenar cronológicamente para la gráfica
+      const ordenadas = [...transacciones].sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+      
+      let acumulado = 0;
+      const labels = [];
+      const dataPoints = [];
+
+      ordenadas.forEach(t => {
+        labels.push(t.fecha);
+        if (t.tipo === 'deposito') {
+          acumulado += Number(t.monto) || 0;
+        } else {
+          acumulado -= Number(t.monto) || 0;
+        }
+        dataPoints.push(acumulado);
+      });
+
+      if (chartInstance) {
+        chartInstance.destroy();
+      }
+
+      chartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Evolución de Ahorros (Q)',
+            data: dataPoints,
+            borderColor: '#00e676',
+            backgroundColor: 'rgba(0, 230, 118, 0.1)',
+            fill: true,
+            tension: 0.3
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: '#888' }, grid: { color: '#222' } },
+            y: { ticks: { color: '#888' }, grid: { color: '#222' } }
+          }
+        }
       });
     }
   </script>
+  <script src="app.js"></script>
 </body>
 </html>
